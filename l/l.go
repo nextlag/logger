@@ -13,7 +13,7 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/nextlag/slogPretty/configuration"
+	"github.com/nextlag/logger/configuration"
 )
 
 type LoggerOptions struct {
