@@ -1,0 +1,6 @@
+env: "local"
+logging:
+  level: "info"
+  project_path: "/Users/nextbug/Documents/GoProjects/concurrency"
+  log_to_file: false
+  log_path: "/Users/nextbug/Documents/GoProjects/concurrency/data/logs/out.log"
