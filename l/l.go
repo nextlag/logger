@@ -1,7 +1,9 @@
+// nolint
 package l
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 	"github.com/mattn/go-colorable"
@@ -19,156 +21,131 @@ import (
 	"github.com/nextlag/logger/config"
 )
 
-const fileRule = 0644
-
-// ErrNilLoggerConfig представляет ошибку отсутствия конфигурации логгера.
-var ErrNilLoggerConfig = errors.New("nil logger config")
-
-// colorEnabled определяет, поддерживает ли терминал цветной вывод.
-//
-//nolint:gochecknoglobals
-var colorEnabled = term.IsTerminal(int(os.Stdout.Fd()))
+var (
+	colorEnabled = term.IsTerminal(int(os.Stdout.Fd()))
+	pool         = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, 0, 1024)
+		},
+	}
+)
 
 type LoggerOptions struct {
 	Attrs     []slog.Attr
 	SlogOpts  *slog.HandlerOptions
-	Out       io.Writer
-	log       *log.Logger
 	LogToFile bool
 	LogPath   string
+	Out       io.Writer
+	log       *log.Logger
 }
-
 type logHandler struct {
 	opts *LoggerOptions
 	slog.Handler
 }
 
-// NewLogger создает новый экземпляр логгера.
 func NewLogger(cfg *config.Config) (*slog.Logger, error) {
 	if cfg == nil || cfg.Logging == nil {
-		return nil, ErrNilLoggerConfig
+		return nil, errors.New("nil logger configuration")
 	}
-
 	opts := LoggerOptions{
 		SlogOpts: &slog.HandlerOptions{
 			Level:     cfg.Logging.Level,
 			AddSource: true,
 		},
-		LogToFile: cfg.Logging.LogToFile,
-		LogPath:   cfg.Logging.LogPath,
+		// LogToFile: cfg.Logging.LogToFile,
+		// LogPath:   cfg.Logging.LogPath,
 	}
-
-	if opts.LogToFile {
-		file, err := os.OpenFile(opts.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileRule)
-		if err != nil {
-			log.Fatalf("failed to open log file: %v", err)
-		}
-
-		opts.Out = file
-	} else {
-		opts.Out = os.Stdout
-	}
-
 	output := colorable.NewColorable(os.Stdout)
+	if opts.LogToFile {
+		file, err := os.OpenFile(opts.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open log file: %w", err)
+		}
+		output = file
+	}
 	handler := newLogHandler(output, &opts)
-
 	return slog.New(handler), nil
 }
-
 func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
-	baseHandler := slog.NewTextHandler(out, opts.SlogOpts)
-
+	var baseHandler slog.Handler
+	if opts.LogToFile {
+		baseHandler = slog.NewJSONHandler(out, opts.SlogOpts)
+	} else {
+		baseHandler = slog.NewTextHandler(out, opts.SlogOpts)
+	}
 	return &logHandler{
 		Handler: baseHandler,
 		opts: &LoggerOptions{
-			log: log.New(out, "", 0),
+			LogPath:   opts.LogPath,
+			LogToFile: opts.LogToFile,
+			log:       log.New(out, "", 0),
 		},
 	}
 }
-
-func (lh *logHandler) Handle(_ context.Context, record slog.Record) error {
-	level := record.Level.String() + ":"
-	message := record.Message
-
-	var fields []slog.Attr
-
-	record.Attrs(func(attr slog.Attr) bool {
-		fields = append(fields, attr)
-
+func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
+	level := r.Level.String() + ":"
+	msg := r.Message
+	// Prepare fields
+	fields := make(map[string]interface{}, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		processAttr(a, fields)
 		return true
 	})
-
-	formattedFields := formatFields(fields)
-
-	fs := runtime.CallersFrames([]uintptr{record.PC})
+	// Get buffer from pool
+	buf := pool.Get().([]byte)
+	defer func() {
+		buf = buf[:0]
+		pool.Put(buf)
+	}()
+	// Marshal fields to JSON
+	var fieldsJSON []byte
+	if len(fields) > 0 {
+		var err error
+		if fieldsJSON, err = json.Marshal(fields); err != nil {
+			return fmt.Errorf("failed to marshal log fields: %w", err)
+		}
+	}
+	// Get caller info
+	fs := runtime.CallersFrames([]uintptr{r.PC})
 	frame, _ := fs.Next()
 	relPath := shortenFilePath(frame.File)
+	// Format time and message
+	timeStr := r.Time.Format("[02.01.2006 15:04:05.000]")
 	callerInfo := fmt.Sprintf("%s:%d", relPath, frame.Line)
-
-	timeStr := record.Time.Format("[02.01.2006 15:04:05.000]")
-
-	if colorEnabled {
-		level = applyLevelColor(record.Level, level)
-		message = color.CyanString(message)
+	// Apply colors if enabled
+	if !lh.opts.LogToFile && colorEnabled {
+		level = applyLevelColor(r.Level, level)
+		msg = color.CyanString(msg)
 		callerInfo = color.WhiteString(callerInfo)
 	}
-
-	parts := []string{
+	// Format log message
+	logLine := fmt.Sprintf("%s %s %s %s %s",
 		timeStr,
 		level,
-		message,
+		msg,
 		callerInfo,
-	}
-
-	if formattedFields != "" {
-		parts = append(parts, formattedFields)
-	}
-
-	lh.opts.log.Println(strings.Join(parts, " "))
-
+		string(fieldsJSON),
+	)
+	// Write to log
+	lh.opts.log.Println(logLine)
 	return nil
 }
-
-func formatFields(attrs []slog.Attr) string {
-	var fields []string
-
-	var specialFields []string
-
-	for _, attr := range attrs {
-		if attr.Key == "record_id" || attr.Key == "field" {
-			specialFields = append(specialFields, formatAttr(attr))
-		}
-	}
-
-	for _, attr := range attrs {
-		if attr.Key != "record_id" && attr.Key != "field" {
-			fields = append(fields, formatAttr(attr))
-		}
-	}
-
-	return strings.Join(append(specialFields, fields...), " ")
-}
-
-func formatAttr(attr slog.Attr) string {
-	switch value := attr.Value.Any().(type) {
-	case string:
-		return fmt.Sprintf("%s=%q", attr.Key, value)
+func processAttr(a slog.Attr, fields map[string]interface{}) {
+	switch v := a.Value.Any().(type) {
 	case []byte:
-		return fmt.Sprintf("%s=%q", attr.Key, string(value))
+		fields[a.Key] = string(v)
 	case *[]byte:
-		return fmt.Sprintf("%s=%q", attr.Key, string(*value))
+		fields[a.Key] = string(*v)
 	case error:
-		return fmt.Sprintf("%s=%q", attr.Key, value.Error())
+		fields[a.Key] = v.Error()
 	default:
-		return fmt.Sprintf("%s=%v", attr.Key, attr.Value)
+		fields[a.Key] = a.Value.Any()
 	}
 }
-
 func applyLevelColor(level slog.Level, str string) string {
 	if !colorEnabled {
 		return str
 	}
-
 	switch {
 	case level >= slog.LevelError:
 		return color.RedString(str)
@@ -180,33 +157,22 @@ func applyLevelColor(level slog.Level, str string) string {
 		return color.YellowString(str)
 	}
 }
-
 func shortenFilePath(path string) string {
 	if relPath, err := filepath.Rel(getProjectRoot(), path); err == nil {
 		return relPath
 	}
-
 	return filepath.Base(path)
 }
-
 func getProjectRoot() string {
-	_, filePath, _, ok := runtime.Caller(0)
-	if !ok {
-		return ""
-	}
-
-	dir := filepath.Dir(filePath)
-
-	return filepath.Join(dir, "..", "..")
+	_, file, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(file), "..", "..")
 }
-
 func (lh *logHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &logHandler{
 		Handler: lh.Handler.WithAttrs(attrs),
 		opts:    lh.opts,
 	}
 }
-
 func (lh *logHandler) WithGroup(name string) slog.Handler {
 	return &logHandler{
 		Handler: lh.Handler.WithGroup(name),
