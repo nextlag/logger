@@ -52,8 +52,8 @@ func NewLogger(cfg *config.Config) (*slog.Logger, error) {
 			Level:     cfg.Logging.Level,
 			AddSource: true,
 		},
-		// LogToFile: cfg.Logging.LogToFile,
-		// LogPath:   cfg.Logging.LogPath,
+		LogToFile: cfg.Logging.LogToFile,
+		LogPath:   cfg.Logging.LogPath,
 	}
 	output := colorable.NewColorable(os.Stdout)
 	if opts.LogToFile {
@@ -64,8 +64,10 @@ func NewLogger(cfg *config.Config) (*slog.Logger, error) {
 		output = file
 	}
 	handler := newLogHandler(output, &opts)
+
 	return slog.New(handler), nil
 }
+
 func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
 	var baseHandler slog.Handler
 	if opts.LogToFile {

@@ -13,6 +13,9 @@ const configFile = "config.json"
 
 func main() {
 	data, err := os.ReadFile(configFile)
+	if err != nil {
+		log.Fatal("failed to read file config")
+	}
 
 	cfg, err := config.Load(bytes.NewReader(data))
 	if err != nil {
