@@ -1,40 +1,39 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 
 	"github.com/nextlag/logger/er"
 )
 
-type (
-	Config struct {
-		Logging *Logging `json:"logging"`
+// LogLevelValue реализует интерфейс flag.Value.
+type LogLevelValue struct {
+	Value *slog.Level
+}
+
+func (l *LogLevelValue) String() string {
+	if l.Value == nil {
+		return ""
 	}
 
-	Logging struct {
-		Level     slog.Level `json:"level"`
-		LogToFile bool       `json:"log_to_file"`
-		LogPath   string     `json:"log_path"`
-	}
-)
+	return l.Value.String()
+}
 
-func Load(reader io.Reader) (*Config, error) {
-	if reader == nil {
-		return nil, errors.Join(er.ErrIncorrectReader, nil)
-	}
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, errors.Join(er.ErrReadBuffer, nil)
+func (l *LogLevelValue) Set(value string) error {
+	logLevelMap := map[string]slog.Level{
+		"debug": slog.LevelDebug,
+		"info":  slog.LevelInfo,
+		"warn":  slog.LevelWarn,
+		"error": slog.LevelError,
 	}
 
-	var cfg Config
-	if err = json.Unmarshal(data, &cfg); err != nil {
-		return nil, errors.Join(er.ErrConfigParse, err)
+	level, found := logLevelMap[value]
+	if !found {
+		return errors.Join(er.Format("invalid log level: %s", value))
 	}
 
-	return &cfg, nil
+	*l.Value = level
+
+	return nil
 }

@@ -1,7 +1,7 @@
 {
   "logging": {
     "level": "debug",
-    "log_to_file": true,
+    "log_to_file": false,
     "log_path": "data/log/out.log"
   }
 }

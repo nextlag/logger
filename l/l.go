@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/mattn/go-colorable"
@@ -75,6 +76,7 @@ func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
 	} else {
 		baseHandler = slog.NewTextHandler(out, opts.SlogOpts)
 	}
+
 	return &logHandler{
 		Handler: baseHandler,
 		opts: &LoggerOptions{
@@ -84,6 +86,7 @@ func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
 		},
 	}
 }
+
 func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 	level := r.Level.String() + ":"
 	msg := r.Message
@@ -91,36 +94,37 @@ func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 	fields := make(map[string]interface{}, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		processAttr(a, fields)
+
 		return true
 	})
+
 	// Get buffer from pool
 	buf := pool.Get().([]byte)
 	defer func() {
 		buf = buf[:0]
 		pool.Put(buf)
 	}()
+
 	// Marshal fields to JSON
 	var fieldsJSON []byte
+
 	if len(fields) > 0 {
 		var err error
 		if fieldsJSON, err = json.Marshal(fields); err != nil {
 			return fmt.Errorf("failed to marshal log fields: %w", err)
 		}
 	}
-	// Get caller info
+
 	fs := runtime.CallersFrames([]uintptr{r.PC})
 	frame, _ := fs.Next()
 	relPath := shortenFilePath(frame.File)
-	// Format time and message
 	timeStr := r.Time.Format("[02.01.2006 15:04:05.000]")
 	callerInfo := fmt.Sprintf("%s:%d", relPath, frame.Line)
-	// Apply colors if enabled
 	if !lh.opts.LogToFile && colorEnabled {
 		level = applyLevelColor(r.Level, level)
 		msg = color.CyanString(msg)
 		callerInfo = color.WhiteString(callerInfo)
 	}
-	// Format log message
 	logLine := fmt.Sprintf("%s %s %s %s %s",
 		timeStr,
 		level,
@@ -128,10 +132,12 @@ func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 		callerInfo,
 		string(fieldsJSON),
 	)
-	// Write to log
+
 	lh.opts.log.Println(logLine)
+
 	return nil
 }
+
 func processAttr(a slog.Attr, fields map[string]interface{}) {
 	switch v := a.Value.Any().(type) {
 	case []byte:
@@ -144,6 +150,7 @@ func processAttr(a slog.Attr, fields map[string]interface{}) {
 		fields[a.Key] = a.Value.Any()
 	}
 }
+
 func applyLevelColor(level slog.Level, str string) string {
 	if !colorEnabled {
 		return str
@@ -159,25 +166,50 @@ func applyLevelColor(level slog.Level, str string) string {
 		return color.YellowString(str)
 	}
 }
+
 func shortenFilePath(path string) string {
 	if relPath, err := filepath.Rel(getProjectRoot(), path); err == nil {
 		return relPath
 	}
+
 	return filepath.Base(path)
 }
+
 func getProjectRoot() string {
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..")
 }
+
 func (lh *logHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &logHandler{
 		Handler: lh.Handler.WithAttrs(attrs),
 		opts:    lh.opts,
 	}
 }
+
 func (lh *logHandler) WithGroup(name string) slog.Handler {
 	return &logHandler{
 		Handler: lh.Handler.WithGroup(name),
 		opts:    lh.opts,
 	}
+}
+
+func Float32Attr(key string, val float32) slog.Attr {
+	return slog.Float64(key, float64(val))
+}
+
+func UInt32Attr(key string, val uint32) slog.Attr {
+	return slog.Int(key, int(val))
+}
+
+func Int32Attr(key string, val int32) slog.Attr {
+	return slog.Int(key, int(val))
+}
+
+func TimeAttr(key string, time time.Time) slog.Attr {
+	return slog.String(key, time.String())
+}
+
+func ErrAttr(err error) slog.Attr {
+	return slog.String("error", err.Error())
 }

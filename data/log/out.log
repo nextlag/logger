@@ -1,2 +1,3 @@
 [18.03.2025 13:29:59.080] INFO: Config logger/cmd/main.go:27 logging=&{DEBUG true data/log/out.log}
 [18.03.2025 13:36:18.193] INFO: Config logger/cmd/main.go:27 {"logging":{"level":"DEBUG","log_to_file":true,"log_path":"data/log/out.log"}}
+[18.03.2025 13:44:27.406] INFO: Config logger/cmd/main.go:30 {"logging":{"level":"DEBUG","log_to_file":true,"log_path":"data/log/out.log"}}

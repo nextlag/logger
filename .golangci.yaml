@@ -57,6 +57,8 @@ linters-settings:
       - i
       - db
       - fn
+      - r
+      - w
   funlen:
     lines: 100
     ignore-comments: true
