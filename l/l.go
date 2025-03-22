@@ -48,22 +48,27 @@ func NewLogger(cfg *config.Config) (*slog.Logger, error) {
 	if cfg == nil || cfg.Logging == nil {
 		return nil, errors.New("nil logger configuration")
 	}
+
 	opts := LoggerOptions{
 		SlogOpts: &slog.HandlerOptions{
 			Level:     cfg.Logging.Level,
 			AddSource: true,
 		},
+
 		LogToFile: cfg.Logging.LogToFile,
 		LogPath:   cfg.Logging.LogPath,
 	}
+
 	output := colorable.NewColorable(os.Stdout)
 	if opts.LogToFile {
 		file, err := os.OpenFile(opts.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
+
 		output = file
 	}
+
 	handler := newLogHandler(output, &opts)
 
 	return slog.New(handler), nil
@@ -71,11 +76,12 @@ func NewLogger(cfg *config.Config) (*slog.Logger, error) {
 
 func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
 	var baseHandler slog.Handler
+
 	if opts.LogToFile {
 		baseHandler = slog.NewJSONHandler(out, opts.SlogOpts)
-	} else {
-		baseHandler = slog.NewTextHandler(out, opts.SlogOpts)
 	}
+
+	baseHandler = slog.NewTextHandler(out, opts.SlogOpts)
 
 	return &logHandler{
 		Handler: baseHandler,
@@ -90,7 +96,7 @@ func newLogHandler(out io.Writer, opts *LoggerOptions) *logHandler {
 func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 	level := r.Level.String() + ":"
 	msg := r.Message
-	// Prepare fields
+
 	fields := make(map[string]interface{}, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
 		processAttr(a, fields)
@@ -98,14 +104,12 @@ func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 		return true
 	})
 
-	// Get buffer from pool
 	buf := pool.Get().([]byte)
 	defer func() {
 		buf = buf[:0]
 		pool.Put(buf)
 	}()
 
-	// Marshal fields to JSON
 	var fieldsJSON []byte
 
 	if len(fields) > 0 {
@@ -117,14 +121,18 @@ func (lh *logHandler) Handle(_ context.Context, r slog.Record) error {
 
 	fs := runtime.CallersFrames([]uintptr{r.PC})
 	frame, _ := fs.Next()
-	relPath := shortenFilePath(frame.File)
+	relPath := lh.shortenFilePath(frame.File)
+
 	timeStr := r.Time.Format("[02.01.2006 15:04:05.000]")
+
 	callerInfo := fmt.Sprintf("%s:%d", relPath, frame.Line)
+
 	if !lh.opts.LogToFile && colorEnabled {
 		level = applyLevelColor(r.Level, level)
 		msg = color.CyanString(msg)
 		callerInfo = color.WhiteString(callerInfo)
 	}
+
 	logLine := fmt.Sprintf("%s %s %s %s %s",
 		timeStr,
 		level,
@@ -167,17 +175,23 @@ func applyLevelColor(level slog.Level, str string) string {
 	}
 }
 
-func shortenFilePath(path string) string {
-	if relPath, err := filepath.Rel(getProjectRoot(), path); err == nil {
+func (lh *logHandler) shortenFilePath(path string) string {
+	if relPath, err := filepath.Rel(lh.getProjectRoot(), path); err == nil {
 		return relPath
 	}
 
 	return filepath.Base(path)
 }
 
-func getProjectRoot() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..")
+func (lh *logHandler) getProjectRoot() string {
+	if lh.opts.LogToFile {
+		_, file, _, _ := runtime.Caller(0)
+		return filepath.Join(filepath.Dir(file), "..", "..")
+	}
+
+	_, file, _, _ := runtime.Caller(8)
+
+	return filepath.Dir(file)
 }
 
 func (lh *logHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
