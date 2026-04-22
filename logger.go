@@ -1,3 +1,5 @@
+// Package logger provides a global [slog.Logger] singleton with JSON/text output,
+// multi-writer fan-out, and colored text formatting. Zero external dependencies.
 package logger
 
 import (
@@ -48,6 +50,7 @@ var (
 	}()
 )
 
+// WithAttr adds attributes that will be included in every log record.
 func WithAttr(attrs ...slog.Attr) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -59,6 +62,7 @@ func WithAttr(attrs ...slog.Attr) {
 	global.instance.Store(nil)
 }
 
+// WithJSON switches between JSON (true) and colored text (false) output format.
 func WithJSON(state bool) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -68,6 +72,7 @@ func WithJSON(state bool) {
 	global.instance.Store(nil)
 }
 
+// WithHandler sets a custom [slog.Handler], overriding both JSON and text handlers.
 func WithHandler(h slog.Handler) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -76,6 +81,7 @@ func WithHandler(h slog.Handler) {
 	global.instance.Store(nil)
 }
 
+// WithSource enables or disables source file:line information in log records.
 func WithSource(state bool) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -84,6 +90,7 @@ func WithSource(state bool) {
 	global.instance.Store(nil)
 }
 
+// SetServiceName sets a group name that namespaces all subsequent log attributes.
 func SetServiceName(serviceName string) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -92,6 +99,8 @@ func SetServiceName(serviceName string) {
 	global.instance.Store(nil)
 }
 
+// SetLevel parses the given string (e.g. "DEBUG", "INFO", "WARN", "ERROR")
+// and sets the minimum log level. Invalid values default to INFO.
 func SetLevel(logLevel string) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -100,6 +109,8 @@ func SetLevel(logLevel string) {
 	global.instance.Store(nil)
 }
 
+// AddWriter appends an additional [io.Writer] to the output destinations.
+// The caller retains ownership and is responsible for closing the writer.
 func AddWriter(writer io.Writer) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
@@ -108,6 +119,8 @@ func AddWriter(writer io.Writer) {
 	global.instance.Store(nil)
 }
 
+// GetInstance returns the global [slog.Logger], creating it on first call
+// or after any configuration change. Safe for concurrent use.
 func GetInstance() *slog.Logger {
 	inst := global.instance.Load()
 	if inst != nil {

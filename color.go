@@ -20,6 +20,6 @@ func colorLevel(level slog.Level) string {
 	case slog.LevelError:
 		return coloredError
 	default:
-		return level.String()
+		return "\033[90m" + level.String() + "\033[0m"
 	}
 }
