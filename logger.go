@@ -24,7 +24,12 @@ type logger struct {
 	handler     slog.Handler
 }
 
-const defaultEnvName = "LOG_LEVEL"
+const (
+	defaultEnvName = "LOG_LEVEL"
+	timeFormat     = "2006-01-02T15:04:05"
+	sourceKey      = "source"
+	maxLineDigits  = 5
+)
 
 var (
 	global = logger{
@@ -160,7 +165,7 @@ func sourceReplacer() func([]string, slog.Attr) slog.Attr {
 		case slog.TimeKey:
 			t, ok := a.Value.Any().(time.Time)
 			if ok {
-				return slog.String(slog.TimeKey, t.Format("2006-01-02T15:04:05"))
+				return slog.String(slog.TimeKey, t.Format(timeFormat))
 			}
 
 		case slog.SourceKey:
@@ -171,12 +176,12 @@ func sourceReplacer() func([]string, slog.Attr) slog.Attr {
 
 			file := strings.TrimPrefix(s.File, sourcePrefix)
 
-			buf := make([]byte, 0, len(file)+5)
+			buf := make([]byte, 0, len(file)+maxLineDigits)
 			buf = append(buf, file...)
 			buf = append(buf, ':')
 			buf = strconv.AppendInt(buf, int64(s.Line), 10)
 
-			return slog.String("file", string(buf))
+			return slog.String(sourceKey, string(buf))
 		}
 
 		return a
