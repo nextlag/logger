@@ -110,7 +110,7 @@ func TestGetInstance(t *testing.T) {
 				AddWriter(buf)
 			},
 			logFunc:     func(log *slog.Logger) { log.Info("test") },
-			wantContain: "file",
+			wantContain: ".go:",
 		},
 		{
 			name: "returns cached instance",

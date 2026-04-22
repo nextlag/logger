@@ -1,11 +1,11 @@
 package logger
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -33,7 +33,7 @@ func (h *textHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
-	var b strings.Builder
+	var b bytes.Buffer
 	b.Grow(128)
 
 	b.WriteString(r.Time.Format(time.DateTime))
@@ -51,7 +51,10 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 		b.WriteByte(' ')
 		b.WriteString(file)
 		b.WriteByte(':')
-		b.Write(strconv.AppendInt(nil, int64(line), 10))
+
+		var tmp [20]byte
+
+		b.Write(strconv.AppendInt(tmp[:0], int64(line), 10))
 	}
 
 	b.WriteString(" \"")
@@ -73,7 +76,7 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	_, err := io.WriteString(h.w, b.String())
+	_, err := h.w.Write(b.Bytes())
 
 	return err
 }
@@ -109,7 +112,7 @@ func (h *textHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-func appendAttr(b *strings.Builder, group string, a slog.Attr) {
+func appendAttr(b *bytes.Buffer, group string, a slog.Attr) {
 	a.Value = a.Value.Resolve()
 
 	if a.Equal(slog.Attr{}) {

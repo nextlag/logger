@@ -156,10 +156,6 @@ func GetInstance() *slog.Logger {
 }
 
 func sourceReplacer() func([]string, slog.Attr) slog.Attr {
-	if sourcePrefix == "" {
-		return nil
-	}
-
 	return func(_ []string, a slog.Attr) slog.Attr {
 		switch a.Key {
 		case slog.TimeKey:
@@ -169,6 +165,10 @@ func sourceReplacer() func([]string, slog.Attr) slog.Attr {
 			}
 
 		case slog.SourceKey:
+			if sourcePrefix == "" {
+				return a
+			}
+
 			s, ok := a.Value.Any().(*slog.Source)
 			if !ok {
 				return a
