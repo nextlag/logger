@@ -138,9 +138,12 @@ func appendAttr(b *bytes.Buffer, group string, a slog.Attr) {
 	}
 
 	if a.Value.Kind() == slog.KindGroup {
-		prefix := a.Key
-		if group != "" {
+		prefix := group
+		switch {
+		case a.Key != "" && group != "":
 			prefix = group + "." + a.Key
+		case a.Key != "":
+			prefix = a.Key
 		}
 
 		for _, ga := range a.Value.Group() {
@@ -159,5 +162,30 @@ func appendAttr(b *bytes.Buffer, group string, a slog.Attr) {
 
 	b.WriteString(a.Key)
 	b.WriteByte('=')
-	b.WriteString(a.Value.String())
+	appendValue(b, a.Value.String())
+}
+
+func appendValue(b *bytes.Buffer, val string) {
+	if !needsQuote(val) {
+		b.WriteString(val)
+
+		return
+	}
+
+	b.WriteString(strconv.Quote(val))
+}
+
+func needsQuote(s string) bool {
+	if s == "" {
+		return true
+	}
+
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case ' ', '"', '\\', '\n', '\r', '\t':
+			return true
+		}
+	}
+
+	return false
 }

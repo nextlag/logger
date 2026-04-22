@@ -20,6 +20,8 @@ func resetGlobal(t *testing.T) {
 	global.envName = defaultEnvName
 	global.level = nil
 	global.withSource = false
+	global.useJSON = true
+	global.handler = nil
 	global.instance.Store(nil)
 }
 

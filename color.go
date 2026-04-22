@@ -1,6 +1,11 @@
 package logger
 
-import "log/slog"
+import (
+	"log/slog"
+	"os"
+)
+
+var noColor = os.Getenv("NO_COLOR") != ""
 
 var (
 	coloredDebug = "\033[90mDEBUG\033[0m"
@@ -10,6 +15,10 @@ var (
 )
 
 func colorLevel(level slog.Level) string {
+	if noColor {
+		return level.String()
+	}
+
 	switch level {
 	case slog.LevelDebug:
 		return coloredDebug

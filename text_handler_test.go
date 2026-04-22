@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/slogtest"
@@ -129,6 +130,28 @@ func TestTextHandlerHandle(t *testing.T) {
 			},
 			wantParts: []string{"rkey=rval"},
 		},
+		{
+			name: "inline group inside named group",
+			handler: func(buf *bytes.Buffer) slog.Handler {
+				return newTextHandler(buf, slog.LevelDebug, false).WithGroup("G")
+			},
+			record: func() slog.Record {
+				r := newTestRecord(slog.LevelInfo, "test")
+				r.AddAttrs(slog.Group("", slog.String("a", "1")))
+				return r
+			},
+			wantParts: []string{"G.a=1"},
+		},
+		{
+			name:    "value with spaces is quoted",
+			handler: func(buf *bytes.Buffer) slog.Handler { return newTextHandler(buf, slog.LevelDebug, false) },
+			record: func() slog.Record {
+				r := newTestRecord(slog.LevelInfo, "test")
+				r.AddAttrs(slog.String("msg", "hello world"))
+				return r
+			},
+			wantParts: []string{`msg="hello world"`},
+		},
 	}
 
 	for _, test := range tests {
@@ -204,27 +227,78 @@ func parseTextOutput(line string) map[string]any {
 
 	// attributes: key=value pairs, dots denote nested groups
 	for _, pair := range splitAttrs(line) {
-		before, after, ok := strings.Cut(pair, "=")
+		key, val, ok := strings.Cut(pair, "=")
 		if !ok {
 			continue
 		}
 
-		key := before
-		val := after
+		if unq, err := strconv.Unquote(val); err == nil {
+			val = unq
+		}
+
 		setNested(m, strings.Split(key, "."), val)
 	}
 
 	return m
 }
 
-// splitAttrs splits "k1=v1 k2=v2" respecting that values may not contain spaces.
+// splitAttrs splits "k1=v1 k2=\"v 2\" k3=v3" respecting quoted values.
 func splitAttrs(s string) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil
 	}
 
-	return strings.Fields(s)
+	var parts []string
+	for len(s) > 0 {
+		eqIdx := strings.IndexByte(s, '=')
+		if eqIdx < 0 {
+			break
+		}
+
+		rest := s[eqIdx+1:]
+		var val string
+		if len(rest) > 0 && rest[0] == '"' {
+			end, err := strconv.Unquote(rest)
+			if err == nil {
+				quoted := rest[:len(rest)-len(strings.TrimPrefix(rest[1:], ""))+1]
+
+				for i := 1; i < len(rest); i++ {
+					if rest[i] == '\\' {
+						i++
+						continue
+					}
+
+					if rest[i] == '"' {
+						val = rest[:i+1]
+						_ = end
+						break
+					}
+				}
+
+				_ = quoted
+			}
+		}
+
+		if val == "" {
+			spIdx := strings.IndexByte(rest, ' ')
+			if spIdx < 0 {
+				parts = append(parts, s)
+				break
+			}
+
+			parts = append(parts, s[:eqIdx+1+spIdx])
+			s = strings.TrimLeft(rest[spIdx:], " ")
+
+			continue
+		}
+
+		parts = append(parts, s[:eqIdx+1]+val)
+		after := rest[len(val):]
+		s = strings.TrimLeft(after, " ")
+	}
+
+	return parts
 }
 
 // setNested sets a value in a nested map: ["a","b","k"] → m["a"]["b"]["k"] = val.
