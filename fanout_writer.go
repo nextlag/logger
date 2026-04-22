@@ -14,17 +14,21 @@ func newFanoutWriter(list ...io.Writer) *fanoutWriter {
 }
 
 func (fw *fanoutWriter) Write(bs []byte) (int, error) {
-	var err error
+	if len(fw.list) == 1 {
+		return fw.list[0].Write(bs)
+	}
+
+	var errs []error
 
 	for _, writer := range fw.list {
-		_, wrErr := writer.Write(bs)
-		if wrErr != nil {
-			err = errors.Join(err, wrErr)
+		_, err := writer.Write(bs)
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	if err != nil {
-		return 0, err
+	if len(errs) > 0 {
+		return 0, errors.Join(errs...)
 	}
 
 	return len(bs), nil

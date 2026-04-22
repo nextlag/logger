@@ -4,8 +4,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type logger struct {
@@ -17,14 +20,28 @@ type logger struct {
 	level       *slog.Level
 	instance    atomic.Pointer[slog.Logger]
 	withSource  bool
+	useJSON     bool
+	handler     slog.Handler
 }
 
 const defaultEnvName = "LOG_LEVEL"
 
-var global = logger{
-	writerList: []io.Writer{os.Stdout},
-	envName:    defaultEnvName,
-}
+var (
+	global = logger{
+		writerList: []io.Writer{os.Stdout},
+		envName:    defaultEnvName,
+		useJSON:    true,
+	}
+
+	sourcePrefix = func() string {
+		wd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+
+		return wd + "/"
+	}()
+)
 
 func WithAttr(attrs ...slog.Attr) {
 	global.mx.Lock()
@@ -34,6 +51,23 @@ func WithAttr(attrs ...slog.Attr) {
 		global.attrList = append(global.attrList, attr)
 	}
 
+	global.instance.Store(nil)
+}
+
+func WithJSON(state bool) {
+	global.mx.Lock()
+	defer global.mx.Unlock()
+
+	global.useJSON = state
+	global.handler = nil
+	global.instance.Store(nil)
+}
+
+func WithHandler(h slog.Handler) {
+	global.mx.Lock()
+	defer global.mx.Unlock()
+
+	global.handler = h
 	global.instance.Store(nil)
 }
 
@@ -87,10 +121,19 @@ func GetInstance() *slog.Logger {
 		global.level = new(parseLevel(os.Getenv(global.envName)))
 	}
 
-	handler := slog.NewJSONHandler(newFanoutWriter(global.writerList...), &slog.HandlerOptions{
-		Level:     global.level,
-		AddSource: global.withSource,
-	})
+	var handler slog.Handler
+	switch {
+	case global.handler != nil:
+		handler = global.handler
+	case global.useJSON:
+		handler = slog.NewJSONHandler(newFanoutWriter(global.writerList...), &slog.HandlerOptions{
+			Level:       global.level,
+			AddSource:   global.withSource,
+			ReplaceAttr: sourceReplacer(),
+		})
+	default:
+		handler = newTextHandler(newFanoutWriter(global.writerList...), global.level, global.withSource)
+	}
 
 	inst = slog.New(handler)
 
@@ -105,6 +148,39 @@ func GetInstance() *slog.Logger {
 	global.instance.Store(inst)
 
 	return inst
+}
+
+func sourceReplacer() func([]string, slog.Attr) slog.Attr {
+	if sourcePrefix == "" {
+		return nil
+	}
+
+	return func(_ []string, a slog.Attr) slog.Attr {
+		switch a.Key {
+		case slog.TimeKey:
+			t, ok := a.Value.Any().(time.Time)
+			if ok {
+				return slog.String(slog.TimeKey, t.Format("2006-01-02T15:04:05"))
+			}
+
+		case slog.SourceKey:
+			s, ok := a.Value.Any().(*slog.Source)
+			if !ok {
+				return a
+			}
+
+			file := strings.TrimPrefix(s.File, sourcePrefix)
+
+			buf := make([]byte, 0, len(file)+5)
+			buf = append(buf, file...)
+			buf = append(buf, ':')
+			buf = strconv.AppendInt(buf, int64(s.Line), 10)
+
+			return slog.String("file", string(buf))
+		}
+
+		return a
+	}
 }
 
 func parseLevel(level string) (parsed slog.Level) {
