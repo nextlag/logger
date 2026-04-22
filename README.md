@@ -89,13 +89,13 @@ logger.WithHandler(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: sl
 ```
 goos: darwin, goarch: amd64, cpu: Intel Core i7-9750H @ 2.60GHz
 
-BenchmarkGetInstance            590 309 676    2.1 ns/op      0 B/op   0 allocs/op
-BenchmarkLogJSON                    618 254   2100 ns/op     56 B/op   3 allocs/op
-BenchmarkLogText                  1 413 280    880 ns/op    168 B/op   4 allocs/op
-BenchmarkLogJSONWithSource          503 170   2300 ns/op    369 B/op   7 allocs/op
-BenchmarkLogTextWithSource        1 293 190    950 ns/op    168 B/op   4 allocs/op
-BenchmarkLogJSONParallel          2 747 616    450 ns/op     56 B/op   3 allocs/op
-BenchmarkLogTextParallel          4 635 878    275 ns/op    168 B/op   4 allocs/op
+BenchmarkGetInstance            576 151 482    2.0 ns/op      0 B/op   0 allocs/op
+BenchmarkLogJSON                    715 207   1700 ns/op     56 B/op   3 allocs/op
+BenchmarkLogText                  1 519 186    791 ns/op     40 B/op   3 allocs/op
+BenchmarkLogJSONWithSource          558 013   2150 ns/op    369 B/op   7 allocs/op
+BenchmarkLogTextWithSource        1 361 030    889 ns/op     40 B/op   3 allocs/op
+BenchmarkLogJSONParallel          3 107 156    381 ns/op     56 B/op   3 allocs/op
+BenchmarkLogTextParallel          6 342 124    197 ns/op     40 B/op   3 allocs/op
 ```
 
 ```bash

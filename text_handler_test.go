@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"regexp"
 	"strings"
 	"testing"
+	"testing/slogtest"
 	"time"
 )
 
@@ -148,6 +150,98 @@ func TestTextHandlerHandle(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestTextHandlerSlogtest(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	slogtest.Run(t, func(_ *testing.T) slog.Handler {
+		buf.Reset()
+		return newTextHandler(&buf, slog.LevelDebug, false)
+	}, func(_ *testing.T) map[string]any {
+		return parseTextOutput(buf.String())
+	})
+}
+
+// parseTextOutput parses text handler output into a map for slogtest.
+// Format: `2006-01-02 15:04:05 LEVEL "msg" key=value group.key=value`
+func parseTextOutput(line string) map[string]any {
+	m := make(map[string]any)
+
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return m
+	}
+
+	// strip ANSI escape codes
+	line = regexp.MustCompile(`\033\[[0-9;]*m`).ReplaceAllString(line, "")
+
+	// time: first 19 chars "2006-01-02 15:04:05"
+	if len(line) >= 19 {
+		m[slog.TimeKey] = line[:19]
+		line = line[19:]
+	}
+
+	line = strings.TrimLeft(line, " ")
+
+	// level: next word
+	if idx := strings.IndexByte(line, ' '); idx > 0 {
+		m[slog.LevelKey] = strings.TrimSpace(line[:idx])
+		line = strings.TrimLeft(line[idx:], " ")
+	}
+
+	// message: quoted string
+	if len(line) > 0 && line[0] == '"' {
+		end := strings.Index(line[1:], "\"")
+		if end >= 0 {
+			m[slog.MessageKey] = line[1 : end+1]
+			line = strings.TrimLeft(line[end+2:], " ")
+		}
+	}
+
+	// attributes: key=value pairs, dots denote nested groups
+	for _, pair := range splitAttrs(line) {
+		before, after, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+
+		key := before
+		val := after
+		setNested(m, strings.Split(key, "."), val)
+	}
+
+	return m
+}
+
+// splitAttrs splits "k1=v1 k2=v2" respecting that values may not contain spaces.
+func splitAttrs(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+
+	return strings.Fields(s)
+}
+
+// setNested sets a value in a nested map: ["a","b","k"] → m["a"]["b"]["k"] = val.
+func setNested(m map[string]any, keys []string, val any) {
+	for i, k := range keys {
+		if i == len(keys)-1 {
+			m[k] = val
+			return
+		}
+
+		sub, ok := m[k].(map[string]any)
+		if !ok {
+			sub = make(map[string]any)
+			m[k] = sub
+		}
+
+		m = sub
 	}
 }
 

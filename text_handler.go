@@ -10,13 +10,22 @@ import (
 	"time"
 )
 
+var bufPool = sync.Pool{
+	New: func() any {
+		b := new(bytes.Buffer)
+		b.Grow(128)
+
+		return b
+	},
+}
+
 type textHandler struct {
-	w         io.Writer
-	mu        *sync.Mutex
-	level     slog.Leveler
-	addSource bool
-	attrs     []slog.Attr
-	group     string
+	w            io.Writer
+	mu           *sync.Mutex
+	level        slog.Leveler
+	addSource    bool
+	preformatted []byte
+	group        string
 }
 
 func newTextHandler(w io.Writer, level slog.Leveler, addSource bool) *textHandler {
@@ -33,11 +42,13 @@ func (h *textHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
-	var b bytes.Buffer
-	b.Grow(128)
+	b := bufPool.Get().(*bytes.Buffer)
+	b.Reset()
 
-	b.WriteString(r.Time.Format(time.DateTime))
-	b.WriteByte(' ')
+	if !r.Time.IsZero() {
+		b.WriteString(r.Time.Format(time.DateTime))
+		b.WriteByte(' ')
+	}
 
 	level := r.Level.String()
 	b.WriteString(colorLevel(r.Level))
@@ -61,12 +72,10 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	b.WriteString(r.Message)
 	b.WriteByte('"')
 
-	for _, attr := range h.attrs {
-		appendAttr(&b, h.group, attr)
-	}
+	b.Write(h.preformatted)
 
 	r.Attrs(func(a slog.Attr) bool {
-		appendAttr(&b, h.group, a)
+		appendAttr(b, h.group, a)
 
 		return true
 	})
@@ -74,21 +83,30 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	b.WriteByte('\n')
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	_, err := h.w.Write(b.Bytes())
+	h.mu.Unlock()
+
+	bufPool.Put(b)
 
 	return err
 }
 
 func (h *textHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	var buf bytes.Buffer
+
+	buf.Write(h.preformatted)
+
+	for _, a := range attrs {
+		appendAttr(&buf, h.group, a)
+	}
+
 	return &textHandler{
-		w:         h.w,
-		mu:        h.mu,
-		level:     h.level,
-		addSource: h.addSource,
-		attrs:     append(h.attrs[:len(h.attrs):len(h.attrs)], attrs...),
-		group:     h.group,
+		w:            h.w,
+		mu:           h.mu,
+		level:        h.level,
+		addSource:    h.addSource,
+		preformatted: buf.Bytes(),
+		group:        h.group,
 	}
 }
 
@@ -103,12 +121,12 @@ func (h *textHandler) WithGroup(name string) slog.Handler {
 	}
 
 	return &textHandler{
-		w:         h.w,
-		mu:        h.mu,
-		level:     h.level,
-		addSource: h.addSource,
-		attrs:     h.attrs,
-		group:     prefix,
+		w:            h.w,
+		mu:           h.mu,
+		level:        h.level,
+		addSource:    h.addSource,
+		preformatted: h.preformatted,
+		group:        prefix,
 	}
 }
 
