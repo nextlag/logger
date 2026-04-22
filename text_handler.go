@@ -40,7 +40,7 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	b.WriteByte(' ')
 
 	level := r.Level.String()
-	b.WriteString(level)
+	b.WriteString(colorLevel(r.Level))
 
 	for i := len(level); i < 5; i++ {
 		b.WriteByte(' ')
