@@ -8,9 +8,7 @@ import (
 	"testing"
 )
 
-func resetGlobal(t *testing.T) {
-	t.Helper()
-
+func resetGlobal() {
 	global.mx.Lock()
 	defer global.mx.Unlock()
 
@@ -142,7 +140,7 @@ func TestGetInstance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(tt *testing.T) {
-			resetGlobal(tt)
+			resetGlobal()
 
 			var buf bytes.Buffer
 

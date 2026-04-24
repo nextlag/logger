@@ -6,9 +6,7 @@ import (
 	"testing"
 )
 
-func setupBench(b *testing.B, json bool) {
-	b.Helper()
-
+func setupBench(json bool) {
 	global.mx.Lock()
 	defer global.mx.Unlock()
 
@@ -24,7 +22,7 @@ func setupBench(b *testing.B, json bool) {
 }
 
 func BenchmarkGetInstance(b *testing.B) {
-	setupBench(b, true)
+	setupBench(true)
 	_ = GetInstance()
 
 	b.ResetTimer()
@@ -35,7 +33,7 @@ func BenchmarkGetInstance(b *testing.B) {
 }
 
 func BenchmarkLogJSON(b *testing.B) {
-	setupBench(b, true)
+	setupBench(true)
 	log := GetInstance()
 
 	b.ResetTimer()
@@ -46,7 +44,7 @@ func BenchmarkLogJSON(b *testing.B) {
 }
 
 func BenchmarkLogText(b *testing.B) {
-	setupBench(b, false)
+	setupBench(false)
 	log := GetInstance()
 
 	b.ResetTimer()
@@ -57,7 +55,7 @@ func BenchmarkLogText(b *testing.B) {
 }
 
 func BenchmarkLogJSONWithSource(b *testing.B) {
-	setupBench(b, true)
+	setupBench(true)
 	WithSource(true)
 
 	log := GetInstance()
@@ -70,7 +68,7 @@ func BenchmarkLogJSONWithSource(b *testing.B) {
 }
 
 func BenchmarkLogTextWithSource(b *testing.B) {
-	setupBench(b, false)
+	setupBench(false)
 	WithSource(true)
 
 	log := GetInstance()
@@ -83,7 +81,7 @@ func BenchmarkLogTextWithSource(b *testing.B) {
 }
 
 func BenchmarkLogJSONParallel(b *testing.B) {
-	setupBench(b, true)
+	setupBench(true)
 	log := GetInstance()
 
 	b.ResetTimer()
@@ -95,7 +93,7 @@ func BenchmarkLogJSONParallel(b *testing.B) {
 }
 
 func BenchmarkLogTextParallel(b *testing.B) {
-	setupBench(b, false)
+	setupBench(false)
 	log := GetInstance()
 
 	b.ResetTimer()

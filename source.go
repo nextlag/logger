@@ -6,12 +6,11 @@ import (
 )
 
 func sourceFromPC(pc uintptr) (string, int) {
-	fn := runtime.FuncForPC(pc)
-	if fn == nil {
+	frames := runtime.CallersFrames([]uintptr{pc})
+	f, _ := frames.Next()
+	if f.File == "" {
 		return "???", 0
 	}
 
-	file, line := fn.FileLine(pc)
-
-	return strings.TrimPrefix(file, sourcePrefix), line
+	return strings.TrimPrefix(f.File, sourcePrefix), f.Line
 }
